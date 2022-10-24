@@ -1,0 +1,21 @@
+on: [push]
+name: tests
+jobs:
+  gotestsum:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      
+      - name: setup-go
+        uses: actions/setup-go@v2
+        with:
+          go-version: "1.19"
+        
+      - name: setup-gotestsum
+        uses: autero1/action-gotestsum@v1.0.0
+        with:
+          gotestsum_version: 1.8.2
+
+      - name: gotestsum
+        run: gotestsum -- -cover ./...
