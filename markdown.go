@@ -12,6 +12,7 @@ import (
 	goldmark "github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
+	"golang.org/x/xerrors"
 )
 
 type blockState struct {
@@ -79,7 +80,7 @@ func (r *markdown) write(w io.Writer, buf []byte) (int, error) {
 	for len(buf) > 0 {
 		if r.atNewline {
 			if err := r.beginLine(w); err != nil {
-				return 0, err
+				return 0, xerrors.Errorf(": %w", err)
 			}
 		}
 
@@ -98,7 +99,7 @@ func (r *markdown) write(w io.Writer, buf []byte) (int, error) {
 			r.openBlocks[len(r.openBlocks)-1].fresh = false
 		}
 		if err != nil {
-			return written, err
+			return written, xerrors.Errorf(": %w", err)
 		}
 		buf = buf[n:]
 	}
@@ -117,28 +118,37 @@ func (r *markdown) beginLine(w io.Writer) error {
 	if n != 0 {
 		r.atNewline = r.prefix[len(r.prefix)-1] == '\n'
 	}
-	return err
+	if err != nil {
+		return xerrors.Errorf(": %w", err)
+	}
+	return nil
 }
 
 func (r *markdown) writeLines(w util.BufWriter, source []byte, lines *text.Segments) error {
 	for i := 0; i < lines.Len(); i++ {
 		line := lines.At(i)
 		if _, err := r.write(w, line.Value(source)); err != nil {
-			return err
+			return xerrors.Errorf(": %w", err)
 		}
 	}
 	return nil
 }
 
 func (r *markdown) writeByte(w io.Writer, c byte) error {
-	_, err := r.write(w, []byte{c})
-	return err
+	if _, err := r.write(w, []byte{c}); err != nil {
+		return xerrors.Errorf(": %w", err)
+	}
+	return nil
 }
 
 // WriteString writes a string to an io.Writer, ensuring that appropriate indentation and prefices are added at the
 // beginning of each line.
 func (r *markdown) writeString(w io.Writer, s string) (int, error) {
-	return r.write(w, []byte(s))
+	n, err := r.write(w, []byte(s))
+	if err != nil {
+		return n, xerrors.Errorf(": %w", err)
+	}
+	return n, nil
 }
 
 // PushIndent adds the specified amount of indentation to the current line prefix.
@@ -182,7 +192,7 @@ func (r *markdown) openBlock(w util.BufWriter, source []byte, node ast.Node) err
 
 	if hasBlankPreviousLines {
 		if err := r.writeByte(w, '\n'); err != nil {
-			return err
+			return xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -195,7 +205,7 @@ func (r *markdown) openBlock(w util.BufWriter, source []byte, node ast.Node) err
 func (r *markdown) closeBlock(w io.Writer) error {
 	if !r.atNewline {
 		if err := r.writeByte(w, '\n'); err != nil {
-			return err
+			return xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -213,23 +223,23 @@ func (r *markdown) renderDocument(w util.BufWriter, source []byte, node ast.Node
 func (r *markdown) renderHeading(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		if _, err := r.writeString(w, strings.Repeat("#", node.(*ast.Heading).Level)); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		if err := r.writeByte(w, ' '); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	} else {
 		if err := r.writeByte(w, '\n'); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -240,11 +250,11 @@ func (r *markdown) renderHeading(w util.BufWriter, source []byte, node ast.Node,
 func (r *markdown) renderBlockquote(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		if _, err := r.writeString(w, "> "); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		r.pushPrefix("> ")
@@ -252,7 +262,7 @@ func (r *markdown) renderBlockquote(w util.BufWriter, source []byte, node ast.No
 		r.popPrefix()
 
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -263,27 +273,27 @@ func (r *markdown) renderBlockquote(w util.BufWriter, source []byte, node ast.No
 func (r *markdown) renderCodeBlock(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if !enter {
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 		return ast.WalkContinue, nil
 	}
 
 	if err := r.openBlock(w, source, node); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	// Each line of a code block needs to be aligned at the same offset, and a code block must start with at least four
 	// spaces. To achieve this, we unconditionally add four spaces to the first line of the code block and indent the
 	// rest as necessary.
 	if _, err := r.writeString(w, "    "); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	r.pushIndent(4)
 	defer r.popPrefix()
 
 	if err := r.writeLines(w, source, node.Lines()); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	return ast.WalkContinue, nil
@@ -293,13 +303,13 @@ func (r *markdown) renderCodeBlock(w util.BufWriter, source []byte, node ast.Nod
 func (r *markdown) renderFencedCodeBlock(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if !enter {
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 		return ast.WalkContinue, nil
 	}
 
 	if err := r.openBlock(w, source, node); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	code := node.(*ast.FencedCodeBlock)
@@ -307,11 +317,11 @@ func (r *markdown) renderFencedCodeBlock(w util.BufWriter, source []byte, node a
 	// Write the start of the fenced code block.
 	fence := []byte("```")
 	if _, err := r.write(w, fence); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	language := code.Language(source)
 	if _, err := r.write(w, language); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	if err := r.writeByte(w, '\n'); err != nil {
 		return ast.WalkStop, nil
@@ -319,18 +329,18 @@ func (r *markdown) renderFencedCodeBlock(w util.BufWriter, source []byte, node a
 
 	// Write the contents of the fenced code block.
 	if err := r.writeLines(w, source, node.Lines()); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	// Write the end of the fenced code block.
 	if err := r.beginLine(w); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	if _, err := r.write(w, fence); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	if err := r.writeByte(w, '\n'); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	return ast.WalkContinue, nil
@@ -340,25 +350,25 @@ func (r *markdown) renderFencedCodeBlock(w util.BufWriter, source []byte, node a
 func (r *markdown) renderHTMLBlock(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if !enter {
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 		return ast.WalkContinue, nil
 	}
 
 	if err := r.openBlock(w, source, node); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	// Write the contents of the HTML block.
 	if err := r.writeLines(w, source, node.Lines()); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	// Write the closure line, if any.
 	html := node.(*ast.HTMLBlock)
 	if html.HasClosure() {
 		if _, err := r.write(w, html.ClosureLine.Value(source)); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -369,7 +379,7 @@ func (r *markdown) renderHTMLBlock(w util.BufWriter, source []byte, node ast.Nod
 func (r *markdown) renderList(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		list := node.(*ast.List)
@@ -381,7 +391,7 @@ func (r *markdown) renderList(w util.BufWriter, source []byte, node ast.Node, en
 	} else {
 		r.listStack = r.listStack[:len(r.listStack)-1]
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -392,7 +402,7 @@ func (r *markdown) renderList(w util.BufWriter, source []byte, node ast.Node, en
 func (r *markdown) renderListItem(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		markerWidth := 2 // marker + space
@@ -401,21 +411,21 @@ func (r *markdown) renderListItem(w util.BufWriter, source []byte, node ast.Node
 		if state.ordered {
 			width, err := r.writeString(w, strconv.FormatInt(int64(state.index), 10))
 			if err != nil {
-				return ast.WalkStop, err
+				return ast.WalkStop, xerrors.Errorf(": %w", err)
 			}
 			state.index++
 			markerWidth += width // marker, space, and digits
 		}
 
 		if _, err := r.write(w, []byte{state.marker, ' '}); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		r.pushIndent(markerWidth)
 	} else {
 		r.popPrefix()
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -429,17 +439,17 @@ func (r *markdown) renderParagraph(w util.BufWriter, source []byte, node ast.Nod
 		if !node.HasBlankPreviousLines() {
 			if prev := node.PreviousSibling(); prev != nil && (prev.Kind() == ast.KindParagraph || prev.Kind() == ast.KindBlockquote) {
 				if err := r.writeByte(w, '\n'); err != nil {
-					return ast.WalkStop, err
+					return ast.WalkStop, xerrors.Errorf(": %w", err)
 				}
 			}
 		}
 
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	} else {
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -450,11 +460,11 @@ func (r *markdown) renderParagraph(w util.BufWriter, source []byte, node ast.Nod
 func (r *markdown) renderTextBlock(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	} else {
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -465,17 +475,17 @@ func (r *markdown) renderTextBlock(w util.BufWriter, source []byte, node ast.Nod
 func (r *markdown) renderThematicBreak(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if !enter {
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 		return ast.WalkContinue, nil
 	}
 
 	if err := r.openBlock(w, source, node); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	if _, err := r.writeString(w, "-------\n"); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	return ast.WalkContinue, nil
@@ -488,13 +498,13 @@ func (r *markdown) renderAutoLink(w util.BufWriter, source []byte, node ast.Node
 	}
 
 	if err := r.writeByte(w, '<'); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	if _, err := r.write(w, node.(*ast.AutoLink).Label(source)); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	if err := r.writeByte(w, '>'); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	return ast.WalkContinue, nil
@@ -550,26 +560,26 @@ func (r *markdown) renderCodeSpan(w util.BufWriter, source []byte, node ast.Node
 	pad := r.shouldPadCodeSpan(source, code)
 
 	if _, err := r.write(w, delimiter); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	if pad {
 		if err := r.writeByte(w, ' '); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 	for c := node.FirstChild(); c != nil; c = c.NextSibling() {
 		text := c.(*ast.Text).Segment
 		if _, err := r.write(w, text.Value(source)); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 	if pad {
 		if err := r.writeByte(w, ' '); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 	if _, err := r.write(w, delimiter); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	return ast.WalkSkipChildren, nil
@@ -579,7 +589,7 @@ func (r *markdown) renderCodeSpan(w util.BufWriter, source []byte, node ast.Node
 func (r *markdown) renderEmphasis(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	em := node.(*ast.Emphasis)
 	if _, err := r.writeString(w, strings.Repeat("*", em.Level)); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	return ast.WalkContinue, nil
 }
@@ -620,25 +630,25 @@ func (r *markdown) linkTitleDelimiter(title []byte) byte {
 func (r *markdown) renderLinkOrImage(w util.BufWriter, open string, dest, title []byte, enter bool) error {
 	if enter {
 		if _, err := r.writeString(w, open); err != nil {
-			return err
+			return xerrors.Errorf(": %w", err)
 		}
 	} else {
 		if _, err := r.writeString(w, "]("); err != nil {
-			return err
+			return xerrors.Errorf(": %w", err)
 		}
 
 		if _, err := r.write(w, r.escapeLinkDest(dest)); err != nil {
-			return err
+			return xerrors.Errorf(": %w", err)
 		}
 		if len(title) != 0 {
 			delimiter := r.linkTitleDelimiter(title)
 			if _, err := fmt.Fprintf(w, ` %c%s%c`, delimiter, string(title), delimiter); err != nil {
-				return err
+				return xerrors.Errorf(": %w", err)
 			}
 		}
 
 		if err := r.writeByte(w, ')'); err != nil {
-			return err
+			return xerrors.Errorf(": %w", err)
 		}
 	}
 	return nil
@@ -648,7 +658,7 @@ func (r *markdown) renderLinkOrImage(w util.BufWriter, open string, dest, title 
 func (r *markdown) renderImage(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	img := node.(*ast.Image)
 	if err := r.renderLinkOrImage(w, "![", img.Destination, img.Title, enter); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	return ast.WalkContinue, nil
 }
@@ -657,7 +667,7 @@ func (r *markdown) renderImage(w util.BufWriter, source []byte, node ast.Node, e
 func (r *markdown) renderLink(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	link := node.(*ast.Link)
 	if err := r.renderLinkOrImage(w, "[", link.Destination, link.Title, enter); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	return ast.WalkContinue, nil
 }
@@ -672,7 +682,7 @@ func (r *markdown) renderRawHTML(w util.BufWriter, source []byte, node ast.Node,
 	for i := 0; i < raw.Segments.Len(); i++ {
 		segment := raw.Segments.At(i)
 		if _, err := r.write(w, segment.Value(source)); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -689,16 +699,16 @@ func (r *markdown) renderText(w util.BufWriter, source []byte, node ast.Node, en
 	value := text.Segment.Value(source)
 
 	if _, err := r.write(w, value); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	switch {
 	case text.HardLineBreak():
 		if _, err := r.writeString(w, "\\\n"); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	case text.SoftLineBreak():
 		if err := r.writeByte(w, '\n'); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -713,7 +723,7 @@ func (r *markdown) renderString(w util.BufWriter, source []byte, node ast.Node, 
 
 	str := node.(*ast.String)
 	if _, err := r.write(w, str.Value); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
 	return ast.WalkContinue, nil
@@ -722,11 +732,11 @@ func (r *markdown) renderString(w util.BufWriter, source []byte, node ast.Node, 
 func (r *markdown) renderTable(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	} else {
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -736,25 +746,25 @@ func (r *markdown) renderTable(w util.BufWriter, source []byte, node ast.Node, e
 func (r *markdown) renderTableHeader(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		if _, err := r.writeString(w, "| "); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	} else {
 		if _, err := r.writeString(w, " |\n|"); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		for x := 0; x < node.ChildCount(); x++ { // use as column count
 			if _, err := r.writeString(w, " --- |"); err != nil {
-				return ast.WalkStop, err
+				return ast.WalkStop, xerrors.Errorf(": %w", err)
 			}
 		}
 
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -764,19 +774,19 @@ func (r *markdown) renderTableHeader(w util.BufWriter, source []byte, node ast.N
 func (r *markdown) renderTableRow(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if enter {
 		if err := r.openBlock(w, source, node); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		if _, err := r.writeString(w, "| "); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	} else {
 		if _, err := r.writeString(w, " |"); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 
 		if err := r.closeBlock(w); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
@@ -787,7 +797,7 @@ func (r *markdown) renderTableCell(w util.BufWriter, source []byte, node ast.Nod
 	if !enter {
 		if node.NextSibling() != nil {
 			if _, err := r.writeString(w, " | "); err != nil {
-				return ast.WalkStop, err
+				return ast.WalkStop, xerrors.Errorf(": %w", err)
 			}
 		}
 	}
@@ -797,7 +807,7 @@ func (r *markdown) renderTableCell(w util.BufWriter, source []byte, node ast.Nod
 
 func (r *markdown) renderStrikethrough(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if _, err := r.writeString(w, "~~"); err != nil {
-		return ast.WalkStop, err
+		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 	return ast.WalkContinue, nil
 }
@@ -810,7 +820,7 @@ func (r *markdown) renderTaskCheckBox(w util.BufWriter, source []byte, node ast.
 		}
 
 		if _, err := r.write(w, []byte{'[', fill, ']', ' '}); err != nil {
-			return ast.WalkStop, err
+			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
 	}
 
