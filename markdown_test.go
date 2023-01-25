@@ -67,6 +67,27 @@ func TestRenderer_Emphasis(t *testing.T) {
 	runTestCase(t, doc, source)
 }
 
+func TestRenderer_CodeSpan(t *testing.T) {
+	source := "this is a `code span` in text\n"
+	doc := ast.NewDocument()
+	doc.AppendChild(doc, newParagraph(true, source, []ast.Node{
+		newText(source, "this is a ", false),
+		newCodeSpan([]ast.Node{
+			newText(source, "code span", false),
+		}),
+		newText(source, " in text", false),
+	}))
+	runTestCase(t, doc, source)
+}
+
+func newCodeSpan(parts []ast.Node) *ast.CodeSpan {
+	span := ast.NewCodeSpan()
+	for _, p := range parts {
+		span.AppendChild(span, p)
+	}
+	return span
+}
+
 func TestRenderer_HeavyEmphasis(t *testing.T) {
 	source := "this is a **line** of text\n"
 	doc := ast.NewDocument()
@@ -260,6 +281,47 @@ func TestRenderer_Task_Checked(t *testing.T) {
 			exast.NewTaskCheckBox(true),
 			newText(source, "task 1", false),
 		})}),
+	}))
+	runTestCase(t, doc, source)
+}
+
+func TestRenderer_FencedCode(t *testing.T) {
+	source := "```json\n{\"att\":1}\n```\n"
+	doc := ast.NewDocument()
+	doc.AppendChild(doc, ast.NewFencedCodeBlock(
+		newText(source, "json\n{\"att\":1}", false),
+	))
+	runTestCase(t, doc, source)
+}
+
+// func TestRenderer_UnfencedCode(t *testing.T) {
+// 	source := "\t{\n\t\t\"att\":1\n\t}\n"
+// 	doc := ast.NewDocument()
+// 	doc.AppendChild(doc, newCodeBlock([]ast.Node{
+// 		newParagraph(false, source, []ast.Node{
+// 			newText(source, "{\n\t\"att\":1\n\t}", false),
+// 		}),
+// 	}))
+// 	runTestCase(t, doc, source)
+// }
+
+// func newCodeBlock(parts []ast.Node) *ast.CodeBlock {
+// 	code := ast.NewCodeBlock()
+// 	for _, p := range parts {
+// 		code.AppendChild(code, p)
+// 	}
+// 	return code
+// }
+
+func TestRenderer_ThematicBreak(t *testing.T) {
+	source := "text1\n--------\n\ntext2\n"
+	doc := ast.NewDocument()
+	doc.AppendChild(doc, newParagraph(true, source, []ast.Node{
+		newText(source, "text1", false),
+	}))
+	doc.AppendChild(doc, ast.NewThematicBreak())
+	doc.AppendChild(doc, newParagraph(true, source, []ast.Node{
+		newText(source, "text2", false),
 	}))
 	runTestCase(t, doc, source)
 }

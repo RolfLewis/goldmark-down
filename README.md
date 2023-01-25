@@ -1,6 +1,6 @@
 # goldmark-down
 
-A markdown parser for use with [@yuin/goldmark](https://github.com/yuin/goldmark). Whereas [goldmark](https://github.com/yuin/goldmark)'s parsing is mostly focused on Commonmark compatibility, this renderer is a baseline Markdown implementation upon which customizations can be added for arbitrary output.
+A markdown renderer for use with [@yuin/goldmark](https://github.com/yuin/goldmark). Whereas [goldmark](https://github.com/yuin/goldmark)'s parsing is mostly focused on Commonmark compatibility, this renderer is a baseline Markdown implementation upon which customizations can be added for arbitrary output.
 
 Supports, by default, Github Markdown Tables, Tasks, and Strikethrough elements. *This functionality will likely be exported to an extension in the future.*
 

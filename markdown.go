@@ -272,6 +272,7 @@ func (r *markdown) renderBlockquote(w util.BufWriter, source []byte, node ast.No
 // RenderCodeBlock renders an *ast.CodeBlock node to the given BufWriter.
 func (r *markdown) renderCodeBlock(w util.BufWriter, source []byte, node ast.Node, enter bool) (ast.WalkStatus, error) {
 	if !enter {
+		r.popPrefix()
 		if err := r.closeBlock(w); err != nil {
 			return ast.WalkStop, xerrors.Errorf(": %w", err)
 		}
@@ -282,16 +283,14 @@ func (r *markdown) renderCodeBlock(w util.BufWriter, source []byte, node ast.Nod
 		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
-	// Each line of a code block needs to be aligned at the same offset, and a code block must start with at least four
-	// spaces. To achieve this, we unconditionally add four spaces to the first line of the code block and indent the
-	// rest as necessary.
-	if _, err := r.writeString(w, "    "); err != nil {
-		return ast.WalkStop, xerrors.Errorf(": %w", err)
-	}
+	// // Each line of a code block needs to be aligned at the same offset, and a code block must start with at least four
+	// // spaces. To achieve this, we unconditionally add four spaces to the first line of the code block and indent the
+	// // rest as necessary.
+	// if _, err := r.writeString(w, "    "); err != nil {
+	// 	return ast.WalkStop, xerrors.Errorf(": %w", err)
+	// }
 
 	r.pushIndent(4)
-	defer r.popPrefix()
-
 	if err := r.writeLines(w, source, node.Lines()); err != nil {
 		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
@@ -484,7 +483,8 @@ func (r *markdown) renderThematicBreak(w util.BufWriter, source []byte, node ast
 		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
-	if _, err := r.writeString(w, "-------\n"); err != nil {
+	// TODO: this prints an extra no line
+	if _, err := r.writeString(w, "--------"); err != nil {
 		return ast.WalkStop, xerrors.Errorf(": %w", err)
 	}
 
